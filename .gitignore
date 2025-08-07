@@ -1,0 +1,96 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build artifacts
+/target/
+/*/target/
+/target*/
+debug/
+release/
+build/
+
+# Runtime generated files
+*.log
+*.out
+*.err
+
+# Docker
+*.tar
+*.tar.gz
+
+# Results and temporary files
+/results/
+/tmp/
+*.tmp
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node modules (if any JS/TS tooling)
+node_modules/
+
+# Python (if any Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Benchmark results
+criterion/
+
+# Local configuration overrides
+local.toml
+*.local.toml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated documentation
+/doc/
+/docs/target/
+
+# Profiling
+perf.data*
+flamegraph.svg
+
+# macOS specific
+.AppleDouble
+.LSOverride
+Icon
+
+# Network stores
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent

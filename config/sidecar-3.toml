@@ -1,0 +1,24 @@
+lighthouse_http_api = "http://lighthouse:5052"
+extra_subnets_per_epoch = 8
+
+[[friend_nodes]]
+peer_id = "friend_1"
+multiaddr = "/ip4/nwaku-1/tcp/60000"
+public_key = "friend_1_pubkey"
+
+[[friend_nodes]]
+peer_id = "friend_2"
+multiaddr = "/ip4/nwaku-2/tcp/60000"
+public_key = "friend_2_pubkey"
+
+[waku_config]
+nwaku_rpc_url = "http://nwaku-3:8545"
+rate_limit_per_epoch = 100
+
+[metrics]
+enabled = true
+listen_address = "0.0.0.0"
+listen_port = 9090
+
+[network]
+listen_port = 9003

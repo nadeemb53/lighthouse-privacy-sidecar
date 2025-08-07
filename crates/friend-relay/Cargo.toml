@@ -1,0 +1,51 @@
+[package]
+name = "friend-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Waku-based friend mesh for anonymous attestation relaying"
+
+[dependencies]
+# Common crate
+stealth-common = { path = "../common" }
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# HTTP client for Waku RPC
+reqwest = { version = "0.11", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+tracing = "0.1"
+
+# Time utilities
+chrono = { version = "0.4", features = ["serde"] }
+
+# Cryptography
+alloy-primitives = "0.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Networking  
+libp2p = { version = "0.53", features = ["gossipsub", "identify"] }
+
+# Base64 encoding/decoding
+base64 = "0.22"
+
+# Random generation
+rand = "0.8"
+
+# Async traits
+async-trait = "0.1"
+
+# Hex encoding
+hex = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"

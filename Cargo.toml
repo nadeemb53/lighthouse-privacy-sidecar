@@ -1,0 +1,82 @@
+[package]
+name = "reth-stealth-sidecar"
+version = "0.1.0"
+edition = "2021"
+authors = ["Frontier Hackathon Team"]
+description = "A privacy-enhancing sidecar for Ethereum validators to defend against the RAINBOW deanonymization attack"
+
+[workspace]
+members = [
+    ".",
+    "crates/subnet-juggler",
+    "crates/friend-relay",
+    "crates/metrics",
+    "crates/common",
+]
+
+[dependencies]
+# Core async runtime
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# Networking and libp2p
+libp2p = { version = "0.53", features = ["gossipsub", "tcp", "dns", "websocket", "yamux", "noise", "secp256k1"] }
+multiaddr = "0.18"
+
+# Ethereum specific
+alloy-primitives = "0.8"
+
+# HTTP client for Lighthouse API
+reqwest = { version = "0.11", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Logging and metrics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus = "0.13"
+metrics = "0.21"
+metrics-prometheus = "0.6"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Time utilities
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Random number generation
+rand = "0.8"
+
+# Regex for topic parsing
+regex = "1.0"
+
+# Hex encoding/decoding
+hex = "0.4"
+
+# Additional async trait support
+async-trait = "0.1"
+
+# Workspace crates
+subnet-juggler = { path = "crates/subnet-juggler" }
+friend-relay = { path = "crates/friend-relay" }
+stealth-metrics = { path = "crates/metrics" }
+stealth-common = { path = "crates/common" }
+
+[dev-dependencies]
+tempfile = "3.0"
+mockall = "0.11"
+
+[[bin]]
+name = "reth-stealth-sidecar"
+path = "src/main.rs"
+
+[[bin]]
+name = "rainbow-attack-tool"
+path = "src/tools/rainbow.rs"

@@ -1,0 +1,30 @@
+[package]
+name = "stealth-common"
+version = "0.1.0"
+edition = "2021"
+description = "Common types and utilities for reth-stealth-sidecar"
+
+[dependencies]
+# Core types  
+alloy-primitives = { version = "0.8", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Ethereum consensus types (using alloy instead)
+# ethereum_consensus = "0.1"
+
+# Error handling
+thiserror = "1.0"
+
+# Networking
+multiaddr = "0.18"
+libp2p = { version = "0.53", default-features = false, features = ["identify"] }
+
+# Async
+tokio = { version = "1.0", features = ["sync"] }
+
+# Random number generation
+rand = "0.8"
