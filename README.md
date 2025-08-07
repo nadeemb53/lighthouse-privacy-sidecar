@@ -55,16 +55,25 @@ The sidecar works alongside **reth** (execution client) and **Lighthouse** (cons
 
 ### Demo the Attack & Defense
 
-# Run the complete demonstration
+```bash
+# Quick Demo: Direct binaries with live mainnet data
 ./scripts/demo.sh
+
+# Full Demo: Complete Docker stack with Grafana dashboard
+USE_DOCKER=true ./scripts/demo.sh
 ```
 
-This will:
-1. ✅ Start Ethereum infrastructure (reth + lighthouse)
-2. 🌈 Run RAINBOW attack (baseline) → Shows vulnerability
-3. 🛡️ Activate stealth sidecars → Enables protection  
-4. 🌈 Run RAINBOW attack again → Shows defense working
-5. 📊 Display metrics and comparison
+**Quick Demo** (default):
+1. 🌈 Run RAINBOW attack on real mainnet traffic → Shows vulnerability
+2. 🛡️ Activate stealth protection → Enables defense
+3. 🌈 Run protected attack → Shows defense working  
+4. 📊 Live Prometheus metrics at http://localhost:9090/metrics
+
+**Full Demo** (Docker):
+1. 🐳 Complete Ethereum stack (reth + lighthouse + nwaku)
+2. 🌈 Same attack/defense demonstration
+3. 📊 **Grafana Dashboard** at http://localhost:3000 (admin/stealth)
+4. 📈 Real-time visualization of all metrics
 
 ### Manual Installation
 
@@ -90,7 +99,26 @@ The sidecar exposes Prometheus metrics at `:9090/metrics`:
 - `stealth_sidecar_bandwidth_bytes_total` - Network overhead
 - `stealth_sidecar_privacy_events_total` - Defense effectiveness
 
-Grafana dashboard included for real-time visualization.
+### Grafana Dashboard
+
+**Option 1: Full Docker Stack**
+```bash
+USE_DOCKER=true ./scripts/demo.sh
+# Grafana available at http://localhost:3000 (admin/stealth)
+```
+
+**Option 2: Standalone Grafana**
+```bash
+# Start Grafana with local config
+docker run -d \
+  -p 3000:3000 \
+  -v $(pwd)/config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro \
+  -v $(pwd)/config/grafana/datasources/prometheus-local.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro \
+  -e GF_SECURITY_ADMIN_PASSWORD=stealth \
+  grafana/grafana:latest
+```
+
+The dashboard provides real-time visualization of attack effectiveness, protection overhead, and system health.
 
 ## 🔧 Configuration
 
@@ -112,14 +140,33 @@ enabled = true
 listen_port = 9090
 ```
 
-## 🎯 Demo Script for Presentations
+## 🎯 Demo Modes for Different Audiences
 
-The demo script provides a complete 5-minute presentation flow:
+### Quick Demo (5 minutes)
+**Best for: Technical presentations, hackathon demos**
+```bash
+./scripts/demo.sh
+```
+- Uses real Ethereum mainnet data
+- Direct binary execution (fast startup)
+- Live Prometheus metrics
+- Command-line results comparison
 
-1. **Baseline Attack** (2 min) - Shows RAINBOW mapping validators
-2. **Activate Defense** (30 sec) - Starts stealth sidecars  
-3. **Protected Attack** (2 min) - Shows attack now fails
-4. **Results Comparison** (30 sec) - Live metrics and success rates
+### Full Demo (10 minutes) 
+**Best for: In-depth technical reviews, production validation**
+```bash
+USE_DOCKER=true ./scripts/demo.sh
+```
+- Complete Ethereum infrastructure
+- Grafana dashboard visualization  
+- Multiple validator simulation
+- Production-like environment
+
+Both demos follow the same flow:
+1. **Baseline Attack** - RAINBOW maps validators successfully
+2. **Activate Defense** - Stealth sidecar components start
+3. **Protected Attack** - Attack effectiveness drops significantly
+4. **Results Analysis** - Quantified protection with measurable costs
 
 ## 🔍 How It Works Technically
 
