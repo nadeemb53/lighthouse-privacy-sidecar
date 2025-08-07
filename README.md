@@ -41,18 +41,7 @@ The attack exploits a side-channel in attestation gossip:
 
 A public RPC frees operators from multi-GB snap syncs; the privacy layer stays feather-light.
 
-### 3. Cover traffic must be cheap **and** provable
-
-We target **< 1 kB/s** extra bandwidth and **< 50 ms** added latency.
-To prove that live we expose Prometheus counters:
-
-* bytes in/out per direction,
-* per-attestation relay latency histogram,
-* privacy events counter (subnet joins, RLN verifications).
-
-During the demo we `curl :9090/metrics` so judges see real numbers, not claims.
-
-### 4. Two defences, each killing one Rainbow cue
+### 3. Two defences, each killing one Rainbow cue
 
 | Rainbow cue | Our kill switch | Why that cue disappears |
 |-------------|-----------------|-------------------------|
