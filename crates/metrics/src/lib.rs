@@ -21,8 +21,8 @@ pub struct StealthMetricsCollector {
     pub subnets_left_total: IntCounterVec,
     pub current_subscribed_subnets: IntGauge,
     pub epoch_reshuffle_duration: Histogram,
-    pub lighthouse_api_requests_total: IntCounterVec,
-    pub lighthouse_api_request_duration: HistogramVec,
+    pub consensus_api_requests_total: IntCounterVec,
+    pub consensus_api_request_duration: HistogramVec,
     
     // Friend relay metrics
     pub attestations_relayed_total: IntCounter,
@@ -84,21 +84,21 @@ impl StealthMetricsCollector {
             )
         ).map_err(|e| StealthError::Metrics(format!("Failed to create epoch_reshuffle_duration: {}", e)))?;
         
-        let lighthouse_api_requests_total = IntCounterVec::new(
+        let consensus_api_requests_total = IntCounterVec::new(
             Opts::new(
-                "stealth_sidecar_lighthouse_api_requests_total",
-                "Total number of Lighthouse API requests"
+                "stealth_sidecar_consensus_api_requests_total",
+                "Total number of consensus API requests"
             ),
             &["endpoint", "status"] // endpoint path and HTTP status
-        ).map_err(|e| StealthError::Metrics(format!("Failed to create lighthouse_api_requests_total: {}", e)))?;
+        ).map_err(|e| StealthError::Metrics(format!("Failed to create consensus_api_requests_total: {}", e)))?;
         
-        let lighthouse_api_request_duration = HistogramVec::new(
+        let consensus_api_request_duration = HistogramVec::new(
             HistogramOpts::new(
-                "stealth_sidecar_lighthouse_api_request_duration_seconds",
-                "Duration of Lighthouse API requests"
+                "stealth_sidecar_consensus_api_request_duration_seconds",
+                "Duration of consensus API requests"
             ),
             &["endpoint"]
-        ).map_err(|e| StealthError::Metrics(format!("Failed to create lighthouse_api_request_duration: {}", e)))?;
+        ).map_err(|e| StealthError::Metrics(format!("Failed to create consensus_api_request_duration: {}", e)))?;
         
         // Friend relay metrics
         let attestations_relayed_total = IntCounter::new(
@@ -158,7 +158,7 @@ impl StealthMetricsCollector {
                 "stealth_sidecar_bandwidth_bytes_total",
                 "Total bandwidth usage in bytes"
             ),
-            &["direction", "protocol"] // "inbound"/"outbound", "lighthouse"/"waku"/"gossip"
+            &["direction", "protocol"] // "inbound"/"outbound", "reth"/"waku"/"gossip"
         ).map_err(|e| StealthError::Metrics(format!("Failed to create bandwidth_bytes_total: {}", e)))?;
         
         let peer_connections = GaugeVec::new(
@@ -166,7 +166,7 @@ impl StealthMetricsCollector {
                 "stealth_sidecar_peer_connections",
                 "Number of active peer connections"
             ),
-            &["peer_type"] // "friend", "lighthouse", "gossip"
+            &["peer_type"] // "friend", "reth", "gossip"
         ).map_err(|e| StealthError::Metrics(format!("Failed to create peer_connections: {}", e)))?;
         
         let message_size_bytes = HistogramVec::new(
@@ -212,8 +212,8 @@ impl StealthMetricsCollector {
         registry.register(Box::new(subnets_left_total.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
         registry.register(Box::new(current_subscribed_subnets.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
         registry.register(Box::new(epoch_reshuffle_duration.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
-        registry.register(Box::new(lighthouse_api_requests_total.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
-        registry.register(Box::new(lighthouse_api_request_duration.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
+        registry.register(Box::new(consensus_api_requests_total.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
+        registry.register(Box::new(consensus_api_request_duration.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
         registry.register(Box::new(attestations_relayed_total.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
         registry.register(Box::new(attestations_received_total.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
         registry.register(Box::new(friend_relay_latency.clone())).map_err(|e| StealthError::Metrics(format!("Registry error: {}", e)))?;
@@ -237,8 +237,8 @@ impl StealthMetricsCollector {
             subnets_left_total,
             current_subscribed_subnets,
             epoch_reshuffle_duration,
-            lighthouse_api_requests_total,
-            lighthouse_api_request_duration,
+            consensus_api_requests_total,
+            consensus_api_request_duration,
             attestations_relayed_total,
             attestations_received_total,
             friend_relay_latency,
@@ -290,10 +290,10 @@ impl StealthMetricsCollector {
         self.privacy_events_total.with_label_values(&["subnet_shuffle"]).inc();
     }
     
-    /// Record Lighthouse API request
-    pub fn record_lighthouse_api_request(&self, endpoint: &str, status: &str, duration_seconds: f64) {
-        self.lighthouse_api_requests_total.with_label_values(&[endpoint, status]).inc();
-        self.lighthouse_api_request_duration.with_label_values(&[endpoint]).observe(duration_seconds);
+    /// Record consensus API request (deprecated - no longer needed)
+    pub fn record_consensus_api_request(&self, endpoint: &str, status: &str, duration_seconds: f64) {
+        self.consensus_api_requests_total.with_label_values(&[endpoint, status]).inc();
+        self.consensus_api_request_duration.with_label_values(&[endpoint]).observe(duration_seconds);
     }
     
     /// Record attestation relay

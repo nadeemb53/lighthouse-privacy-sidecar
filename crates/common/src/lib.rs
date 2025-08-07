@@ -12,8 +12,8 @@ pub enum StealthError {
     Network(String),
     #[error("Configuration error: {0}")]
     Config(String),
-    #[error("Lighthouse API error: {0}")]
-    LighthouseApi(String),
+    #[error("Consensus API error: {0}")]
+    ConsensusApi(String),
     #[error("Waku RLN error: {0}")]
     WakuRln(String),
     #[error("Subnet management error: {0}")]
@@ -88,8 +88,7 @@ pub struct ValidatorInfo {
 /// Configuration for the stealth sidecar
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StealthConfig {
-    /// Lighthouse beacon node HTTP API endpoint
-    pub lighthouse_http_api: String,
+    /// System clock-based epoch calculation (no consensus client needed)
     
     /// Number of extra subnets to join per epoch (6-10 recommended)
     pub extra_subnets_per_epoch: usize,
@@ -137,12 +136,12 @@ pub struct MetricsConfig {
 pub struct NetworkConfig {
     pub listen_port: u16,
     pub external_ip: Option<String>,
+    pub bootstrap_peers: Option<Vec<String>>,
 }
 
 impl Default for StealthConfig {
     fn default() -> Self {
         Self {
-            lighthouse_http_api: "http://localhost:5052".to_string(),
             extra_subnets_per_epoch: 8,
             friend_nodes: Vec::new(),
             waku_config: WakuConfig {
@@ -158,6 +157,7 @@ impl Default for StealthConfig {
             network: NetworkConfig {
                 listen_port: 9000,
                 external_ip: None,
+                bootstrap_peers: None,
             },
         }
     }

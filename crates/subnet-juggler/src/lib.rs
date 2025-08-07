@@ -1,6 +1,5 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use libp2p::gossipsub::TopicHash;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
@@ -8,8 +7,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use stealth_common::{EpochInfo, StealthConfig, StealthError, StealthResult, SubnetId};
 use tokio::sync::{mpsc, watch};
-use tokio::time::{interval, Instant};
+use tokio::time::interval;
 use tracing::{debug, error, info, warn};
+
+pub mod reth_provider;
+pub use reth_provider::{RethNetworkProvider, NetworkEvent, NetworkCommand};
 
 /// Commands that can be sent to the SubnetJuggler
 #[derive(Debug, Clone)]
@@ -50,7 +52,7 @@ pub struct SubnetState {
     pub next_reshuffle: DateTime<Utc>,
 }
 
-/// Interface to interact with Lighthouse's networking layer
+/// Interface to interact with Ethereum networking layer
 #[async_trait::async_trait]
 pub trait NetworkingProvider: Send + Sync {
     /// Subscribe to an attestation subnet
@@ -66,17 +68,17 @@ pub trait NetworkingProvider: Send + Sync {
     async fn get_validator_subnets(&self, validator_pubkey: &str) -> StealthResult<Vec<SubnetId>>;
 }
 
-/// Implementation of NetworkingProvider that talks to Lighthouse HTTP API
-pub struct LighthouseProvider {
+/// Implementation of NetworkingProvider using reth RPC (deprecated - use SystemClockProvider)
+pub struct RethProvider {
     client: reqwest::Client,
     base_url: String,
 }
 
-impl LighthouseProvider {
-    pub fn new(lighthouse_api_url: String) -> Self {
+impl RethProvider {
+    pub fn new(reth_rpc_url: String) -> Self {
         Self {
             client: reqwest::Client::new(),
-            base_url: lighthouse_api_url,
+            base_url: reth_rpc_url,
         }
     }
 
@@ -91,10 +93,10 @@ impl LighthouseProvider {
             .timeout(Duration::from_secs(10))
             .send()
             .await
-            .map_err(|e| StealthError::LighthouseApi(format!("Request failed: {}", e)))?;
+            .map_err(|e| StealthError::ConsensusApi(format!("Request failed: {}", e)))?;
 
         if !response.status().is_success() {
-            return Err(StealthError::LighthouseApi(format!(
+            return Err(StealthError::ConsensusApi(format!(
                 "HTTP {} for {}",
                 response.status(),
                 url
@@ -104,14 +106,14 @@ impl LighthouseProvider {
         response
             .json()
             .await
-            .map_err(|e| StealthError::LighthouseApi(format!("JSON decode failed: {}", e)))
+            .map_err(|e| StealthError::ConsensusApi(format!("JSON decode failed: {}", e)))
     }
 }
 
 #[async_trait::async_trait]
-impl NetworkingProvider for LighthouseProvider {
+impl NetworkingProvider for RethProvider {
     async fn subscribe_to_subnet(&self, subnet_id: SubnetId) -> StealthResult<()> {
-        // In practice, this would use Lighthouse's network API
+        // In practice, this would use reth's libp2p networking
         // For now, we'll simulate the call
         debug!("Subscribing to subnet {}", subnet_id.0);
         
@@ -129,13 +131,13 @@ impl NetworkingProvider for LighthouseProvider {
             .timeout(Duration::from_secs(5))
             .send()
             .await
-            .map_err(|e| StealthError::LighthouseApi(format!("Subscription failed: {}", e)))?;
+            .map_err(|e| StealthError::ConsensusApi(format!("Subscription failed: {}", e)))?;
 
         if response.status().is_success() {
             info!("Successfully subscribed to subnet {}", subnet_id.0);
             Ok(())
         } else {
-            Err(StealthError::LighthouseApi(format!(
+            Err(StealthError::ConsensusApi(format!(
                 "Failed to subscribe to subnet {}: HTTP {}",
                 subnet_id.0,
                 response.status()
@@ -155,13 +157,13 @@ impl NetworkingProvider for LighthouseProvider {
             .timeout(Duration::from_secs(5))
             .send()
             .await
-            .map_err(|e| StealthError::LighthouseApi(format!("Unsubscription failed: {}", e)))?;
+            .map_err(|e| StealthError::ConsensusApi(format!("Unsubscription failed: {}", e)))?;
 
         if response.status().is_success() {
             info!("Successfully unsubscribed from subnet {}", subnet_id.0);
             Ok(())
         } else {
-            Err(StealthError::LighthouseApi(format!(
+            Err(StealthError::ConsensusApi(format!(
                 "Failed to unsubscribe from subnet {}: HTTP {}",
                 subnet_id.0,
                 response.status()
@@ -198,7 +200,7 @@ impl NetworkingProvider for LighthouseProvider {
             .data
             .head_slot
             .parse()
-            .map_err(|e| StealthError::LighthouseApi(format!("Invalid slot number: {}", e)))?;
+            .map_err(|e| StealthError::ConsensusApi(format!("Invalid slot number: {}", e)))?;
 
         // Mainnet constants
         const SLOTS_PER_EPOCH: u64 = 32;
@@ -215,7 +217,7 @@ impl NetworkingProvider for LighthouseProvider {
     }
 
     async fn get_validator_subnets(&self, validator_pubkey: &str) -> StealthResult<Vec<SubnetId>> {
-        // This would query the validator's assigned subnets from Lighthouse
+        // This would calculate the validator's assigned subnets based on epoch
         // For demo purposes, we'll return a fixed set
         debug!("Getting validator subnets for {}", validator_pubkey);
         

@@ -1,0 +1,47 @@
+# reth-stealth-sidecar Configuration
+# This configuration provides privacy protection for Ethereum validators
+
+# Using system clock for epoch calculation - no consensus client needed
+
+# Number of extra subnets to join per epoch for subnet shuffling defense
+extra_subnets_per_epoch = 8
+
+# Friend nodes configuration for Waku mesh relay
+[[friend_nodes]]
+peer_id = "friend_1"
+multiaddr = "/ip4/127.0.0.1/tcp/60001"
+public_key = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+
+[[friend_nodes]]  
+peer_id = "friend_2"
+multiaddr = "/ip4/127.0.0.1/tcp/60002"
+public_key = "0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
+
+[[friend_nodes]]
+peer_id = "friend_3" 
+multiaddr = "/ip4/127.0.0.1/tcp/60003"
+public_key = "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff"
+
+# Waku/nwaku configuration for RLN-protected mesh
+[waku_config]
+nwaku_rpc_url = "http://localhost:8545"
+rln_contract_address = "0x" # Auto-generated if not specified
+rate_limit_per_epoch = 100
+
+# Prometheus metrics configuration  
+[metrics]
+enabled = true
+listen_address = "127.0.0.1" 
+listen_port = 9090
+
+# Network configuration
+[network]
+listen_port = 9000
+external_ip = "127.0.0.1" # Set to your external IP for production
+
+# Bootstrap peers for Ethereum mainnet connection
+bootstrap_peers = [
+    "/ip4/4.157.240.54/tcp/9000/p2p/16Uiu2HAm5a1z45GYvdBZgGh8b5jB6jm1YcgP5TdhqfqmpVsM6gFV",
+    "/ip4/4.196.214.4/tcp/9000/p2p/16Uiu2HAm5CQgaLeFXLFpn7YbYfKXGTGgJBP1vKKg5gLJKPKe2VKb",
+    "/ip4/18.223.219.100/tcp/9000/p2p/16Uiu2HAm8JuqHZsVqQrEFqGVzVZpT6z5FcpPVNJqvEJYLVagH5T4"
+]

@@ -28,7 +28,7 @@ use futures::StreamExt;
 // SSZ and Ethereum consensus imports  
 use snap::raw::Decoder as SnapDecoder;
 
-/// System clock-based provider that doesn't require Lighthouse
+/// System clock-based provider using only public RPC data
 pub struct SystemClockProvider {
     genesis_time: SystemTime,
 }
@@ -631,7 +631,6 @@ impl DemoState {
         
         // Create stealth configuration
         let stealth_config = StealthConfig {
-            lighthouse_http_api: "http://localhost:5052".to_string(),
             extra_subnets_per_epoch: 8,
             friend_nodes: vec![
                 FriendNodeConfig {
@@ -854,7 +853,7 @@ impl DemoState {
         info!("🛡️  ENABLING STEALTH MODE");
         self.stealth_enabled = true;
         
-        // Start real subnet juggler with system clock provider (no Lighthouse dependency)
+        // Start real subnet juggler with system clock provider (no consensus client dependency)
         let system_provider = SystemClockProvider::new();
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         
