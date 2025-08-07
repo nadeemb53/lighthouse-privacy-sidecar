@@ -31,47 +31,44 @@ The attack exploits a side-channel in attestation gossip:
 ### 🛡️ **Core Design Principles**
 
 1. **Zero Validator Risk** - Never touch keys, slashing protection, or consensus logic
-2. **Lightweight Integration** - Single 6MB binary, works with any reth setup
+2. **Lightweight Integration** - Single 6MB binary, works with any reth setup  
 3. **Provable Results** - Real metrics prove <1KB/s overhead and 67%→0% attack success
 4. **Production Ready** - Real libp2p networking, not simulation
 
-* spawns its own libp2p swarm (no need to hook the CL's swarm),
-* talks to a **public** reth JSON-RPC endpoint for health checks,
-* starts/stops in under one second.
+The sidecar:
+* spawns its own libp2p swarm (no need to hook the CL's swarm)
+* talks to a **public** reth JSON-RPC endpoint for health checks
+* starts/stops in under one second
 
 A public RPC frees operators from multi-GB snap syncs; the privacy layer stays feather-light.
 
-### 3. Two defences, each killing one Rainbow cue
+### 🔧 **Technical Implementation**
+
+**Two defences, each killing one Rainbow cue:**
 
 | Rainbow cue | Our kill switch | Why that cue disappears |
 |-------------|-----------------|-------------------------|
 | **Non-backbone subnet** – packet content tells attacker this is "special" | **Dynamic Subnet Shuffling**: we join 8 random subnets every epoch. | Every attestation now appears to come from a subnet we are legitimately in, so nothing is "special". |
 | **First-seen timing** – earliest peer reveals origin | **Friend Mesh w/ Waku + RLN**: we flood the attestation through 3 friends at the same instant. | Attacker receives *four* copies at once; race winner is random, not unique. |
 
-Both layers are optional at runtime (`--extra-subnets 0` or `--friend-count 0`) so operators can mix & match.
+Both layers are optional at runtime so operators can mix & match.
 
-### 5. Why Waku + RLN and not raw libp2p?
+**Why Waku + RLN?**
+* **LightPush** gives direct, encrypted UDP/TCP channels without reinventing a protocol
+* **RLN** grants Sybil-resistant rate-limit proofs so one misbehaving friend can't flood others
 
-* **LightPush** gives direct, encrypted UDP/TCP channels without reinventing a protocol.
-* **RLN** grants Sybil-resistant rate-limit proofs so one misbehaving friend can't flood others.
+**Simplified committee math:**
+The real backbone subnet is `(validator_index * 2) % 64` for most epochs. For demo speed we keep that formula inside both Rainbow and the side-car - Rainbow's authors showed the heuristic works fine with approximate committees, so this shortcut is harmless for the proof-of-concept.
 
-### 6. No committee maths → still enough for attack & defence
+**Graceful failure modes:**
+1. **Public RPC down** → Logs lose latest-block info, privacy still works
+2. **nwaku down** → Friend mesh disabled; subnet shuffling alone still removes the content-based cue
+3. **No trusted friends configured** → Side-car simply omits the relay step; operator benefits from shuffling only
 
-The real backbone subnet is `(validator_index * 2) % 64` for most epochs.
-For demo speed we keep that formula inside both Rainbow and the side-car.
-If future work needs absolute accuracy we can import `ethereum-consensus` or call a beacon REST once—but Rainbow's authors showed the heuristic works fine with approximate committees, so this shortcut is harmless for the proof-of-concept.
-
-### 7. Failure modes & why they degrade gracefully
-
-1. **Public RPC down** → Logs lose latest-block info, privacy still works.
-2. **nwaku down** → Friend mesh disabled; subnet shuffling alone still removes the content-based cue; user sees warning in logs.
-3. **No trusted friends configured** → Side-car simply omits the relay step; operator benefits from shuffling only.
-
-### 8. Security invariants we never violate
-
-* Never touch keystore or slashing DB.
-* Never publish an attestation that differs bit-for-bit from what the CL signed.
-* Never subscribe to *all 64* subnets permanently (would re-introduce unique fingerprint).
+**Security invariants:**
+* Never touch keystore or slashing DB
+* Never publish an attestation that differs bit-for-bit from what the CL signed  
+* Never subscribe to *all 64* subnets permanently (would re-introduce unique fingerprint)
 
 ---
 
