@@ -111,15 +111,6 @@ Validator → reth-stealth-sidecar → Two-layer defense:
 
 The sidecar works alongside **reth** (execution client) using only public RPC endpoints without requiring any consensus client, and without modifying keys, slashing protection, or consensus logic.
 
-## 📊 Measured Impact
-
-| Metric                    | Baseline | With Sidecar | Impact |
-|---------------------------|----------|--------------|---------|
-| RAINBOW Success Rate      | 67%      | **0%**       | ✅ Attack blocked |
-| Extra Bandwidth           | -        | +0.8 kB/s    | Minimal cost |
-| Extra p99 Latency         | -        | +36ms        | Well under 12s slot |
-| Validator Safety          | ✅       | ✅           | No key risk |
-
 ## 🚀 Quick Start
 
 ### 🎬 **Master Demo** (Recommended)
@@ -213,7 +204,7 @@ bootstrap_peers = [
 
 **Perfect for judges and presentations:**
 
-1. **🌈 RAINBOW Attack** - Shows 67% vulnerability 
+1. **🌈 RAINBOW Attack** - Shows the vulnerability 
 2. **🛡️ Activate Defense** - Real libp2p networking starts
 3. **🌈 Protected Attack** - Attack drops to 0% success
 4. **📊 Live Metrics** - Real bandwidth/latency proof
@@ -251,25 +242,6 @@ let relay_futures: Vec<_> = friends.iter()
     
 futures::join_all(relay_futures).await;
 ```
-
-## 🛡️ Safety & Production Readiness
-
-- ✅ **Zero key risk** - No changes to validator keys or slashing protection
-- ✅ **No consensus client needed** - Works with reth only
-- ✅ **Drop-in deployment** - Start/stop without downtime
-- ✅ **Minimal overhead** - <1 KB/s bandwidth, <50ms latency
-- ✅ **Real libp2p networking** - Production Ethereum integration
-
-## 🏆 Hackathon Impact
-
-**Problem Solved:** Protects $1B+ validator ecosystem from IP deanonymization attacks
-
-**Technical Innovation:** 
-- Real libp2p integration with dynamic subnet management
-- k-anonymity through Waku mesh with RLN proofs
-- System clock provider eliminates consensus client dependency
-
-**Measurable Results:** 67% → 0% attack success rate with minimal overhead
 
 ## 📚 References
 
