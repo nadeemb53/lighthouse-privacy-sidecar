@@ -99,33 +99,36 @@ The sidecar works alongside **reth** (execution client) using only public RPC en
 
 ## 🚀 Quick Start
 
-### 🎬 **Master Demo** (Recommended)
+### 🎬 **Live Demo** (Recommended)
 
 ```bash
-# Choose your demo experience level
-./scripts/master-demo.sh
+# 1. Start nwaku for RLN integration (optional but recommended)
+./scripts/setup-nwaku.sh
 
-# Or run directly:
-./scripts/master-demo.sh simple    
-./scripts/master-demo.sh enhanced  
-./scripts/master-demo.sh full     
+# 2. Run the live demo
+./scripts/live-demo.sh
+
+# 3. Stop nwaku when done (optional)
+./scripts/stop-nwaku.sh
 ```
-
-
 
 **Features:**
 - 🌈 **RAINBOW Attack Simulation** - Shows vulnerability (67% → 0% success)
 - 🛡️ **Real libp2p Integration** - Connects to Ethereum mainnet
+- 🛡️ **RLN-enabled Friend Relay** - Cryptographic spam prevention (if nwaku running)
 - 📊 **Live Metrics Dashboard** - Real-time Prometheus monitoring
-- 🎭 **Multi-terminal Experience** - Production-like monitoring
 
-### 📊 **Individual Components**
+### 📊 **Optional Components**
 
 ```bash
-# Run components separately if needed
-./scripts/live-demo.sh           # Main demo only
+# Individual scripts (if needed)
+./scripts/live-demo.sh           # Main demo (checks for nwaku automatically)
 ./scripts/metrics-dashboard.sh   # Live metrics monitoring
 ./scripts/generate-activity.sh   # Network activity simulation
+
+# nwaku management
+./scripts/setup-nwaku.sh         # Start RLN-enabled Waku node
+./scripts/stop-nwaku.sh          # Stop Waku node
 ```
 
 ### Manual Installation
@@ -186,18 +189,7 @@ bootstrap_peers = [
 ]
 ```
 
-## 🎯 Hackathon Demo Flow
-
-**Perfect for judges and presentations:**
-
-1. **🌈 RAINBOW Attack** - Shows the vulnerability 
-2. **🛡️ Activate Defense** - Real libp2p networking starts
-3. **🌈 Protected Attack** - Attack drops to 0% success
-4. **📊 Live Metrics** - Real bandwidth/latency proof
-
-**Result: Complete attack prevention with minimal overhead!**
-
-## 🔍 How It Works Technically
+## 🔍 How It Works
 
 ### SubnetJuggler
 ```rust
