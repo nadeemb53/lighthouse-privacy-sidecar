@@ -1,31 +1,22 @@
 --- a/validator_client/src/attestation_service.rs
 +++ b/validator_client/src/attestation_service.rs
-@@ -340,6 +340,16 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
-                     continue;
-                 }
- 
-+                // STEALTH ENHANCEMENT: Route through privacy sidecar if enabled
-+                if let Some(stealth_client) = &self.stealth_client {
-+                    if let Err(e) = stealth_client.publish_with_privacy(&attestation).await {
-+                        warn!(self.context.log, "Stealth publish failed, falling back to direct"; "error" => ?e);
-+                        // Fall through to normal publish path
-+                    } else {
-+                        continue; // Successfully published via stealth sidecar
-+                    }
-+                }
-+
-                 let attestation_data = &attestation.data;
- 
-                 match self
-@@ -89,6 +89,7 @@ pub struct AttestationService<T, E: EthSpec> {
+@@ -1,6 +1,7 @@
+ use crate::beacon_node_fallback::{BeaconNodeFallback, OfflineOnFailure, RequireSynced};
+ use crate::http_metrics::metrics;
+ use crate::validator_store::ValidatorStore;
++use crate::stealth_client::StealthClient;
+ use environment::RuntimeContext;
+ use eth2::types::{StateId, ValidatorId};
+ use futures::StreamExt;
+@@ -89,6 +90,7 @@ pub struct AttestationService<T, E: EthSpec> {
      beacon_nodes: Arc<BeaconNodeFallback<T, E>>,
      context: Arc<Context<E>>,
      slot_clock: T,
-+    stealth_client: Option<StealthClient>,
++    stealth_client: Option<Arc<StealthClient>>,
  }
  
  impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
-@@ -112,6 +113,7 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+@@ -112,6 +114,7 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
              beacon_nodes,
              context,
              slot_clock,
@@ -33,13 +24,34 @@
          }
      }
  
-@@ -119,6 +121,11 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+@@ -119,6 +122,12 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
          self.slot_clock.set_current_slot(slot);
      }
  
-+    /// Enable stealth publishing through privacy sidecar
++    /// Enable stealth publishing through privacy sidecar (parallel fan-out)
 +    pub fn enable_stealth(&mut self, stealth_url: &str) -> Result<(), String> {
-+        self.stealth_client = Some(StealthClient::new(stealth_url)?);
++        self.stealth_client = Some(Arc::new(StealthClient::new(stealth_url)?));
 +        Ok(())
 +    }
- }
++
+     /// Publish the attestations to the given beacon node.
+     async fn publish_attestations_to_beacon_node(
+         &self,
+@@ -340,6 +349,17 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+                     continue;
+                 }
+ 
++                // STEALTH ENHANCEMENT: Parallel fan-out to privacy sidecar  
++                if let Some(stealth_client) = &self.stealth_client {
++                    let stealth_client = stealth_client.clone();
++                    let attestation = attestation.clone();
++                    let log = self.context.log.clone();
++                    tokio::spawn(async move {
++                        if let Err(e) = stealth_client.publish_with_privacy(&attestation).await {
++                            warn!(log, "Stealth sidecar publish failed"; "error" => ?e);
++                        }
++                    });
++                }
+                 let attestation_data = &attestation.data;
+ 
+                 match self

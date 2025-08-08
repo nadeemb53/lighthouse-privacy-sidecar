@@ -86,3 +86,7 @@ path = "src/main.rs"
 [[bin]]
 name = "realistic-demo"
 path = "src/bin/realistic-demo.rs"
+
+[[bin]]
+name = "libp2p-test"
+path = "src/bin/libp2p-test.rs"

@@ -1,0 +1,51 @@
+# Lighthouse Privacy Sidecar - Holesky Testnet Configuration
+# Conservative settings for testnet validation
+
+# Core privacy settings - conservative for testnet
+extra_subnets_per_epoch = 2  # Conservative: not overwhelming the network
+target_peers_per_subnet = 6  # Standard libp2p mesh size
+reshuffle_interval_epochs = 1
+
+# Friend nodes for k-anonymity (testnet nodes)
+friend_nodes = [
+    # Add trusted testnet nodes here for k-relay testing
+    # "friend1.holesky.example.com:3030",
+    # "friend2.holesky.example.com:3030"
+]
+
+[network] 
+listen_port = 9000
+external_ip = "auto"
+
+# Holesky testnet bootstrap peers
+bootstrap_peers = [
+    "/ip4/128.199.248.138/tcp/9000/p2p/16Uiu2HAmSyrm6NNLbP3Lp6mdvW6HhWL8JbBhWnZNJJSMnV7PBayF",
+    "/ip4/146.190.238.212/tcp/9000/p2p/16Uiu2HAkynAn5hdrgsB3xPSPrfUoN9CfCvdz5dKrRGBGHnPsNowX"
+]
+
+[waku_config]
+# Waku configuration for friend mesh (conservative)
+node_id = "lighthouse-privacy-sidecar-holesky"
+listen_port = 60000
+rln_contract_address = "0x" # Holesky RLN contract address
+
+[metrics]
+enabled = true
+listen_address = "127.0.0.1"
+listen_port = 9090
+
+# Export timing metrics for RAINBOW analysis
+export_first_seen_histogram = true
+export_peer_score_metrics = true
+export_bandwidth_metrics = true
+
+[safety]
+# Safety limits for testnet operation
+max_concurrent_subscriptions = 10
+peer_score_threshold = -10.0
+bandwidth_limit_mb_per_hour = 100
+
+# Operational ethics
+subscribe_to_all_subnets = false  # Never subscribe to all 64
+rate_limit_attestations = true
+respect_peer_limits = true

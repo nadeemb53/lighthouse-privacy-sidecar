@@ -18,7 +18,7 @@ use stealth_metrics::{StealthMetricsCollector, MetricsServer, start_system_metri
 // Add libp2p imports for real gossipsub
 use libp2p::{
     gossipsub::{self, MessageId, IdentTopic},
-    swarm::{SwarmEvent, NetworkBehaviour},
+    swarm::SwarmEvent,
     identify, noise, tcp, yamux, Multiaddr, PeerId, SwarmBuilder,
 };
 use libp2p_identity as identity;
@@ -125,7 +125,7 @@ struct Args {
     command_pipe: String,
 
     /// Demo duration in seconds
-    #[arg(long, default_value = "300")]
+    #[arg(long, default_value = "60")]
     duration: u64,
 }
 
@@ -279,13 +279,53 @@ impl RainbowAnalyzer {
             })
             .collect();
 
+        // Calculate first-seen timing statistics
+        let mut first_seen_lead_times = Vec::new();
+        for (_validator_id, subnet_map) in &self.first_seen_peers {
+            for (_subnet_id, peer_timings) in subnet_map {
+                if peer_timings.len() >= 2 {
+                    // Sort by timestamp and measure lead time advantage of first peer
+                    let mut sorted_timings = peer_timings.clone();
+                    sorted_timings.sort_by_key(|(_, timestamp)| *timestamp);
+                    
+                    // Calculate lead time between first and second peer
+                    let first_time = sorted_timings[0].1;
+                    let second_time = sorted_timings[1].1;
+                    
+                    let duration = second_time.duration_since(first_time);
+                    let lead_time_ms = duration.as_millis();
+                    first_seen_lead_times.push(lead_time_ms as f64);
+                }
+            }
+        }
+
+        // Calculate histogram buckets for first-seen lead times
+        let mut lead_time_histogram = HashMap::new();
+        for &lead_time in &first_seen_lead_times {
+            let bucket = if lead_time < 10.0 { "0-10ms" } 
+                        else if lead_time < 50.0 { "10-50ms" }
+                        else if lead_time < 100.0 { "50-100ms" }
+                        else if lead_time < 500.0 { "100-500ms" }
+                        else { "500ms+" };
+            *lead_time_histogram.entry(bucket).or_insert(0) += 1;
+        }
+
         json!({
             "total_messages_observed": self.total_messages,
             "analysis_duration_secs": elapsed.as_secs(),
             "total_validators_analyzed": self.validator_patterns.len(),
             "successfully_mapped_validators": mapped_validators.len(),
             "success_rate": mapped_validators.len() as f64 / self.validator_patterns.len().max(1) as f64,
-            "mapped_validators": mapped_validators
+            "mapped_validators": mapped_validators,
+            "timing_analysis": {
+                "first_seen_lead_times_ms": {
+                    "samples": first_seen_lead_times.len(),
+                    "mean": if first_seen_lead_times.is_empty() { 0.0 } else { 
+                        first_seen_lead_times.iter().sum::<f64>() / first_seen_lead_times.len() as f64 
+                    },
+                    "histogram": lead_time_histogram
+                }
+            }
         })
     }
 }
@@ -293,6 +333,15 @@ impl RainbowAnalyzer {
 /// Real libp2p gossipsub network for observing attestations
 struct AttestationNetwork {
     attestation_rx: mpsc::UnboundedReceiver<RealAttestation>,
+    stats_rx: mpsc::UnboundedReceiver<NetworkStats>,
+}
+
+#[derive(Debug, Clone)]
+struct NetworkStats {
+    connected_peers: usize,
+    messages_received: u64,
+    bytes_received: u64,
+    active_topics: usize,
 }
 
 impl AttestationNetwork {
@@ -374,23 +423,30 @@ impl AttestationNetwork {
             }
         }
 
-        // Create channel for attestations
+        // Create channels for attestations and stats
         let (attestation_tx, attestation_rx) = mpsc::unbounded_channel();
+        let (stats_tx, stats_rx) = mpsc::unbounded_channel();
 
         // Spawn the network event loop
         tokio::spawn(async move {
-            Self::run_network_loop(swarm, attestation_tx).await;
+            Self::run_network_loop(swarm, attestation_tx, stats_tx).await;
         });
 
         Ok(Self {
             attestation_rx,
+            stats_rx,
         })
     }
 
     async fn run_network_loop(
         mut swarm: libp2p::Swarm<AttestationNetworkBehaviour>,
         attestation_tx: mpsc::UnboundedSender<RealAttestation>,
+        stats_tx: mpsc::UnboundedSender<NetworkStats>,
     ) {
+        let mut connected_peers = 0usize;
+        let mut messages_received = 0u64;
+        let mut bytes_received = 0u64;
+        let mut last_stats_update = Instant::now();
         loop {
             match swarm.select_next_some().await {
                 SwarmEvent::Behaviour(AttestationNetworkBehaviourEvent::Gossipsub(
@@ -401,14 +457,22 @@ impl AttestationNetwork {
                     }
                 )) => {
                     // Parse attestation from gossipsub message
+                    messages_received += 1;
+                    bytes_received += message.data.len() as u64;
+                    
+                    info!("📡 REAL GOSSIPSUB MESSAGE #{}: {} bytes from peer {} on topic {}", 
+                        messages_received, message.data.len(), peer_id, message.topic);
+                    
                     if let Some(attestation) = Self::parse_attestation_message(&message, peer_id) {
-                        debug!("📨 Received attestation from validator {} on subnet {} via peer {}",
-                            attestation.validator_index, attestation.subnet_id, peer_id);
+                        info!("🎯 PARSED REAL ATTESTATION: validator {} on subnet {} via peer {} ({} bytes SSZ data)",
+                            attestation.validator_index, attestation.subnet_id, peer_id, message.data.len());
                         
                         if let Err(_) = attestation_tx.send(attestation) {
                             warn!("Attestation receiver dropped, stopping network loop");
                             break;
                         }
+                    } else {
+                        debug!("📨 Raw gossipsub message (not parsed as attestation): {} bytes", message.data.len());
                     }
                 }
                 SwarmEvent::Behaviour(AttestationNetworkBehaviourEvent::Identify(
@@ -419,13 +483,33 @@ impl AttestationNetwork {
                 SwarmEvent::NewListenAddr { address, .. } => {
                     info!("👂 Listening on {address}");
                 }
-                SwarmEvent::ConnectionEstablished { peer_id, .. } => {
-                    info!("🤝 Connected to peer: {peer_id}");
+                SwarmEvent::ConnectionEstablished { peer_id, connection_id, .. } => {
+                    connected_peers += 1;
+                    info!("🤝 REAL LIBP2P CONNECTION: Connected to beacon node peer: {peer_id}");
+                    info!("   └─ Connection ID: {connection_id}, total peers: {}", connected_peers);
                 }
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                    debug!("👋 Disconnected from peer: {peer_id}");
+                    connected_peers = connected_peers.saturating_sub(1);
+                    info!("👋 Disconnected from peer: {peer_id}, remaining peers: {}", connected_peers);
                 }
                 _ => {}
+            }
+            
+            // Send periodic stats updates
+            if last_stats_update.elapsed() >= Duration::from_secs(5) {
+                let stats = NetworkStats {
+                    connected_peers,
+                    messages_received,
+                    bytes_received,
+                    active_topics: 64, // All 64 attestation subnets
+                };
+                
+                if let Ok(_) = stats_tx.send(stats.clone()) {
+                    info!("📊 NETWORK STATS: {} peers, {} messages, {} bytes received",
+                        stats.connected_peers, stats.messages_received, stats.bytes_received);
+                }
+                
+                last_stats_update = Instant::now();
             }
         }
     }
@@ -468,6 +552,11 @@ impl AttestationNetwork {
             .await
             .ok()
             .flatten()
+    }
+    
+    fn get_network_stats(&mut self) -> Option<NetworkStats> {
+        // Non-blocking check for latest stats
+        self.stats_rx.try_recv().ok()
     }
 
     fn extract_validator_index_from_ssz(data: &[u8]) -> Option<u64> {
@@ -619,6 +708,7 @@ struct DemoState {
     stealth_config: StealthConfig,
     // Metrics collection
     metrics_collector: Option<std::sync::Arc<StealthMetricsCollector>>,
+    latest_network_stats: Option<NetworkStats>,
 }
 
 impl DemoState {
@@ -709,14 +799,25 @@ impl DemoState {
             friend_relay_handle: None,
             stealth_config,
             metrics_collector,
+            latest_network_stats: None,
         })
     }
 
     async fn observe_network_activity(&mut self) {
+        // Check for latest network stats
+        if let Some(stats) = self.attestation_network.get_network_stats() {
+            self.latest_network_stats = Some(stats.clone());
+            if stats.connected_peers > 0 {
+                info!("📊 REAL NETWORK STATUS: {} peers connected, {} messages received", 
+                    stats.connected_peers, stats.messages_received);
+            }
+        }
+        
         // Try to receive real attestations from the network
         let received_real = if let Some(attestation) = self.attestation_network.next_attestation().await {
-            info!("📨 Real attestation: validator {} on subnet {} from peer {}",
-                attestation.validator_index, attestation.subnet_id, attestation.source_peer);
+            info!("🎯 REAL BEACON ATTESTATION: validator {} on subnet {} from peer {} ({} bytes)",
+                attestation.validator_index, attestation.subnet_id, attestation.source_peer, attestation.raw_data.len());
+            info!("   └─ Real libp2p gossipsub message received from Ethereum beacon chain!");
             
             // Record metrics for bandwidth usage
             if let Some(metrics) = &self.metrics_collector {
@@ -859,7 +960,7 @@ impl DemoState {
         
         // Start real subnet juggler with system clock provider (no consensus client dependency)
         let system_provider = SystemClockProvider::new();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         
         let (mut subnet_juggler, handle) = SubnetJuggler::new(
             self.stealth_config.clone(),
@@ -878,7 +979,7 @@ impl DemoState {
         
         // Start real friend relay
         let waku_provider = NwakuProvider::new(&self.stealth_config.waku_config);
-        let (shutdown_tx2, shutdown_rx2) = tokio::sync::watch::channel(false);
+        let (_shutdown_tx2, shutdown_rx2) = tokio::sync::watch::channel(false);
             
         let (mut friend_relay, friend_relay_handle) = FriendRelay::new(
             self.stealth_config.clone(),
