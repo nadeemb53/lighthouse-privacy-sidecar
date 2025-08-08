@@ -1,7 +1,5 @@
-# reth-stealth-sidecar Configuration
-# This configuration provides privacy protection for Ethereum validators
-
-# Using system clock for epoch calculation - no consensus client needed
+# lighthouse-privacy-sidecar Configuration
+# This configuration provides privacy protection for Lighthouse validators
 
 # Number of extra subnets to join per epoch for subnet shuffling defense
 extra_subnets_per_epoch = 8

@@ -1,0 +1,45 @@
+--- a/validator_client/src/attestation_service.rs
++++ b/validator_client/src/attestation_service.rs
+@@ -340,6 +340,16 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+                     continue;
+                 }
+ 
++                // STEALTH ENHANCEMENT: Route through privacy sidecar if enabled
++                if let Some(stealth_client) = &self.stealth_client {
++                    if let Err(e) = stealth_client.publish_with_privacy(&attestation).await {
++                        warn!(self.context.log, "Stealth publish failed, falling back to direct"; "error" => ?e);
++                        // Fall through to normal publish path
++                    } else {
++                        continue; // Successfully published via stealth sidecar
++                    }
++                }
++
+                 let attestation_data = &attestation.data;
+ 
+                 match self
+@@ -89,6 +89,7 @@ pub struct AttestationService<T, E: EthSpec> {
+     beacon_nodes: Arc<BeaconNodeFallback<T, E>>,
+     context: Arc<Context<E>>,
+     slot_clock: T,
++    stealth_client: Option<StealthClient>,
+ }
+ 
+ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+@@ -112,6 +113,7 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+             beacon_nodes,
+             context,
+             slot_clock,
++            stealth_client: None,
+         }
+     }
+ 
+@@ -119,6 +121,11 @@ impl<T: SlotClock + 'static, E: EthSpec> AttestationService<T, E> {
+         self.slot_clock.set_current_slot(slot);
+     }
+ 
++    /// Enable stealth publishing through privacy sidecar
++    pub fn enable_stealth(&mut self, stealth_url: &str) -> Result<(), String> {
++        self.stealth_client = Some(StealthClient::new(stealth_url)?);
++        Ok(())
++    }
+ }

@@ -657,6 +657,10 @@ impl DemoState {
             network: NetworkConfig {
                 listen_port: 9000,
                 external_ip: None,
+                bootstrap_peers: Some(vec![
+                    "/ip4/4.157.240.54/tcp/9000/p2p/16Uiu2HAm5a1z45GYvdBZgGh8b5jB6jm1YcgP5TdhqfqmpVsM6gFV".to_string(),
+                    "/ip4/4.196.214.4/tcp/9000/p2p/16Uiu2HAm5CQgaLeFXLFpn7YbYfKXGTGgJBP1vKKg5gLJKPKe2VKb".to_string(),
+                ]),
             },
         };
         

@@ -1,78 +1,23 @@
 use anyhow::Result;
 use clap::Parser;
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, Instant};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
 use tokio::time::sleep;
 use tracing::{info, warn, error, debug};
 
-// Import our stealth sidecar components
-use subnet_juggler::{SubnetJuggler, SubnetJugglerHandle, SubnetCommand, NetworkingProvider, RethNetworkProvider, NetworkEvent};
+// Import our privacy sidecar components
+use subnet_juggler::{SubnetJuggler, SubnetJugglerHandle, SubnetCommand, BeaconNetworkProvider};
 use friend_relay::{FriendRelay, NwakuProvider, RelayCommand};
-use stealth_common::{StealthConfig, SubnetId, EpochInfo, StealthResult, StealthError};
+use stealth_common::StealthConfig;
 use stealth_metrics::{StealthMetricsCollector, MetricsServer, start_system_metrics_updater};
 
-/// System clock-based provider using only public RPC data
-#[derive(Clone)]
-pub struct SystemClockProvider {
-    genesis_time: SystemTime,
-}
-
-impl SystemClockProvider {
-    pub fn new() -> Self {
-        // Ethereum mainnet genesis time: 2020-12-01 12:00:23 UTC
-        let genesis_time = SystemTime::UNIX_EPOCH + Duration::from_secs(1606824023);
-        Self { genesis_time }
-    }
-}
-
-#[async_trait::async_trait]
-impl NetworkingProvider for SystemClockProvider {
-    async fn subscribe_to_subnet(&self, subnet_id: SubnetId) -> StealthResult<()> {
-        // For now, we just log the subscription
-        info!("🔗 Subscribed to subnet {}", subnet_id.0);
-        Ok(())
-    }
-    
-    async fn unsubscribe_from_subnet(&self, subnet_id: SubnetId) -> StealthResult<()> {
-        // For now, we just log the unsubscription
-        info!("🔌 Unsubscribed from subnet {}", subnet_id.0);
-        Ok(())
-    }
-    
-    async fn get_current_epoch_info(&self) -> StealthResult<EpochInfo> {
-        // Calculate current epoch using system time and Ethereum constants
-        const SECONDS_PER_SLOT: u64 = 12;
-        const SLOTS_PER_EPOCH: u64 = 32;
-        
-        let elapsed = SystemTime::now()
-            .duration_since(self.genesis_time)
-            .map_err(|e| StealthError::Config(format!("Time error: {}", e)))?;
-        
-        let current_slot = elapsed.as_secs() / SECONDS_PER_SLOT;
-        let current_epoch = current_slot / SLOTS_PER_EPOCH;
-        
-        Ok(EpochInfo {
-            epoch: current_epoch,
-            slot: current_slot,
-            slots_per_epoch: SLOTS_PER_EPOCH,
-            seconds_per_slot: SECONDS_PER_SLOT,
-        })
-    }
-    
-    async fn get_validator_subnets(&self, _validator_pubkey: &str) -> StealthResult<Vec<SubnetId>> {
-        // For demo, return fixed subnets 0 and 1
-        Ok(vec![SubnetId::new(0)?, SubnetId::new(1)?])
-    }
-}
-
-/// Main reth-stealth-sidecar binary
+/// Main lighthouse-privacy-sidecar binary
 #[derive(Parser, Debug)]
-#[command(name = "reth-stealth-sidecar")]
-#[command(about = "Privacy-enhancing sidecar for Ethereum validators")]
+#[command(name = "lighthouse-privacy-sidecar")]
+#[command(about = "Privacy-enhancing sidecar for Lighthouse validators")]
 #[command(version = "1.0.0")]
 struct Args {
     /// Configuration file path
@@ -83,20 +28,12 @@ struct Args {
     #[arg(long)]
     stealth: bool,
 
-    /// Reth RPC endpoints (space-separated)
-    #[arg(long, value_delimiter = ' ', default_values = ["https://reth-mainnet.paradigm.xyz"])]
-    reth_endpoints: Vec<String>,
-
     /// Bootstrap peers for libp2p (real mainnet beacon nodes)
     #[arg(long, value_delimiter = ' ', default_values = [
         "/ip4/4.157.240.54/tcp/9000/p2p/16Uiu2HAm5a1z45GYvdBZgGh8b5jB6jm1YcgP5TdhqfqmpVsM6gFV",
         "/ip4/4.196.214.4/tcp/9000/p2p/16Uiu2HAm5CQgaLeFXLFpn7YbYfKXGTGgJBP1vKKg5gLJKPKe2VKb"
     ])]
     bootstrap_peers: Vec<String>,
-
-    /// Command pipe for demo control
-    #[arg(long, default_value = "/tmp/stealth_demo_commands")]
-    command_pipe: String,
 
     /// Validator public key for subnet calculation
     #[arg(long)]
@@ -117,22 +54,22 @@ enum SidecarCommand {
 }
 
 /// Main sidecar state management
-struct StealthSidecar {
+struct PrivacySidecar {
     config: StealthConfig,
     stealth_enabled: bool,
     
-    // Real stealth sidecar components
+    // Real privacy components
     subnet_juggler_handle: Option<SubnetJugglerHandle>,
     friend_relay_handle: Option<friend_relay::FriendRelayHandle>,
     
     // Metrics collection
     metrics_collector: Option<Arc<StealthMetricsCollector>>,
     
-    // Real networking provider
-    networking_provider: Option<RethNetworkProvider>,
+    // Beacon network provider
+    beacon_network: Option<BeaconNetworkProvider>,
 }
 
-impl StealthSidecar {
+impl PrivacySidecar {
     async fn new(config: StealthConfig) -> Result<Self> {
         // Initialize metrics if enabled
         let metrics_collector = if config.metrics.enabled {
@@ -175,7 +112,7 @@ impl StealthSidecar {
             subnet_juggler_handle: None,
             friend_relay_handle: None,
             metrics_collector,
-            networking_provider: None,
+            beacon_network: None,
         })
     }
 
@@ -188,16 +125,16 @@ impl StealthSidecar {
         info!("🛡️  ENABLING STEALTH MODE");
         self.stealth_enabled = true;
         
-        // Initialize real libp2p networking provider
-        let networking_provider = RethNetworkProvider::new(bootstrap_peers).await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize network provider: {}", e))?;
+        // Initialize real beacon network provider
+        let beacon_network = BeaconNetworkProvider::new(bootstrap_peers).await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize beacon network: {}", e))?;
         
-        // Start real subnet juggler with libp2p provider
+        // Start real subnet juggler with beacon network provider
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         
         let (mut subnet_juggler, handle) = SubnetJuggler::new(
             self.config.clone(),
-            networking_provider,
+            beacon_network,
             shutdown_rx,
         );
         
@@ -241,7 +178,7 @@ impl StealthSidecar {
             self.config.extra_subnets_per_epoch);
         info!("✅ Friend relay mesh activated ({} trusted nodes)", 
             self.config.friend_nodes.len());
-        info!("✅ RLN rate limiting enabled");
+        info!("✅ Privacy protection enabled");
         
         Ok(())
     }
@@ -271,41 +208,40 @@ impl StealthSidecar {
         }
         self.friend_relay_handle = None;
         
-        info!("✅ Returned to baseline configuration - stealth protection disabled");
+        info!("✅ Privacy protection disabled");
         Ok(())
     }
 
     async fn get_status(&self) -> Value {
-        let (epoch_info, peer_count) = if let Some(provider) = &self.networking_provider {
-            let epoch_info = provider.get_current_epoch_info().await.unwrap_or(EpochInfo {
-                epoch: 0,
-                slot: 0,
-                slots_per_epoch: 32,
-                seconds_per_slot: 12,
-            });
-            let peer_count = provider.get_peer_count().await;
-            (epoch_info, peer_count)
+        let peer_count = if let Some(network) = &self.beacon_network {
+            network.get_peer_count().await
         } else {
-            // Fallback to system clock calculation
-            let epoch_info = SystemClockProvider::new().get_current_epoch_info().await.unwrap_or(EpochInfo {
-                epoch: 0,
-                slot: 0,
-                slots_per_epoch: 32,
-                seconds_per_slot: 12,
-            });
-            (epoch_info, 0)
+            0
         };
+
+        // Calculate current epoch using Ethereum constants
+        let genesis_time = 1606824023u64; // Ethereum mainnet genesis
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let current_slot = if now > genesis_time {
+            (now - genesis_time) / 12
+        } else {
+            0
+        };
+        let current_epoch = current_slot / 32;
 
         json!({
             "stealth_enabled": self.stealth_enabled,
-            "current_epoch": epoch_info.epoch,
-            "current_slot": epoch_info.slot,
+            "current_epoch": current_epoch,
+            "current_slot": current_slot,
             "extra_subnets_per_epoch": self.config.extra_subnets_per_epoch,
             "friend_nodes_count": self.config.friend_nodes.len(),
             "metrics_enabled": self.config.metrics.enabled,
-            "waku_rpc_url": self.config.waku_config.nwaku_rpc_url,
             "peer_count": peer_count,
-            "networking_provider": if self.networking_provider.is_some() { "libp2p" } else { "none" }
+            "networking": "beacon_chain_gossipsub"
         })
     }
 
@@ -313,7 +249,7 @@ impl StealthSidecar {
         info!("📝 Attestation from validator {} on subnet {}", validator_id, subnet_id);
         
         if self.stealth_enabled {
-            info!("🛡️  Protected: Forwarding through friend mesh + subnet shuffling");
+            info!("🛡️  Protected: Forwarding through privacy mesh + subnet shuffling");
             
             // Use real friend relay to forward the attestation
             if let Some(friend_relay) = &self.friend_relay_handle {
@@ -354,69 +290,13 @@ async fn load_config(config_path: &PathBuf) -> Result<StealthConfig> {
     }
 }
 
-async fn run_command_listener(
-    command_pipe: String,
-    cmd_tx: mpsc::UnboundedSender<SidecarCommand>,
-) {
-    loop {
-        match tokio::fs::File::open(&command_pipe).await {
-            Ok(file) => {
-                let reader = BufReader::new(file.into_std().await);
-                for line in reader.lines() {
-                    if let Ok(line) = line {
-                        let line = line.trim();
-                        if line.is_empty() { continue; }
-                        
-                        let cmd = if line == "enable_stealth" {
-                            SidecarCommand::EnableStealth
-                        } else if line == "disable_stealth" {
-                            SidecarCommand::DisableStealth
-                        } else if line == "get_status" {
-                            SidecarCommand::GetStatus
-                        } else if line == "shutdown" {
-                            SidecarCommand::Shutdown
-                        } else if line.starts_with("send_attestation ") {
-                            let parts: Vec<&str> = line.split_whitespace().collect();
-                            if parts.len() >= 4 {
-                                if let (Ok(validator_id), Ok(subnet_id)) = (parts[1].parse(), parts[2].parse()) {
-                                    SidecarCommand::SendAttestation {
-                                        validator_id,
-                                        subnet_id,
-                                        data: parts[3].to_string(),
-                                    }
-                                } else { continue; }
-                            } else { continue; }
-                        } else {
-                            continue;
-                        };
-                        
-                        if cmd_tx.send(cmd).is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(_) => {
-                // Pipe doesn't exist yet, wait and retry
-                sleep(Duration::from_millis(100)).await;
-            }
-        }
-    }
-}
-
 async fn run_sidecar(args: Args) -> Result<()> {
-    info!("🚀 Starting reth-stealth-sidecar");
+    info!("🚀 Starting lighthouse-privacy-sidecar");
     info!("   Config: {}", args.config.display());
-    info!("   Reth endpoints: {:?}", args.reth_endpoints);
     info!("   Bootstrap peers: {:?}", args.bootstrap_peers);
     
     // Load configuration
-    let mut config = load_config(&args.config).await?;
-    
-    // Override config with command line args if provided
-    if let Some(pubkey) = &args.validator_pubkey {
-        info!("📋 Using validator pubkey from command line: {}", pubkey);
-    }
+    let config = load_config(&args.config).await?;
     
     // Use bootstrap peers from config if not provided via CLI
     let bootstrap_peers = if args.bootstrap_peers.is_empty() {
@@ -426,67 +306,40 @@ async fn run_sidecar(args: Args) -> Result<()> {
     };
     
     // Initialize sidecar
-    let mut sidecar = StealthSidecar::new(config).await?;
+    let mut sidecar = PrivacySidecar::new(config).await?;
     
     // Enable stealth if requested
     if args.stealth {
         sidecar.enable_stealth(bootstrap_peers.clone()).await?;
     }
     
-    // Set up command pipe reader
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SidecarCommand>();
-    
-    // Spawn command reader task
-    let cmd_tx_clone = cmd_tx.clone();
-    let command_pipe = args.command_pipe.clone();
-    tokio::spawn(async move {
-        run_command_listener(command_pipe, cmd_tx_clone).await;
-    });
-    
     info!("✅ Sidecar started successfully");
-    info!("🎛️  Send commands to: {}", args.command_pipe);
     if sidecar.metrics_collector.is_some() {
         info!("📊 Metrics available at: http://{}:{}/metrics", 
             sidecar.config.metrics.listen_address, 
             sidecar.config.metrics.listen_port);
     }
     
-    // Main event loop
+    // Simple demonstration loop
+    info!("🎯 Privacy sidecar ready for Lighthouse integration");
+    info!("   Apply patch: lighthouse-patch/attestation_service.patch");
+    info!("   Privacy features: {} extra subnets, {} friend nodes", 
+        sidecar.config.extra_subnets_per_epoch,
+        sidecar.config.friend_nodes.len());
+    
+    // Run indefinitely until Ctrl+C
     loop {
         tokio::select! {
-            cmd = cmd_rx.recv() => {
-                if let Some(cmd) = cmd {
-                    match cmd {
-                        SidecarCommand::EnableStealth => {
-                            if let Err(e) = sidecar.enable_stealth(bootstrap_peers.clone()).await {
-                                error!("Failed to enable stealth: {}", e);
-                            }
-                        }
-                        SidecarCommand::DisableStealth => {
-                            if let Err(e) = sidecar.disable_stealth().await {
-                                error!("Failed to disable stealth: {}", e);
-                            }
-                        }
-                        SidecarCommand::GetStatus => {
-                            let status = sidecar.get_status().await;
-                            info!("📊 Status: {}", serde_json::to_string_pretty(&status).unwrap_or_default());
-                        }
-                        SidecarCommand::SendAttestation { validator_id, subnet_id, data } => {
-                            if let Err(e) = sidecar.handle_send_attestation(validator_id, subnet_id, &data).await {
-                                error!("Failed to handle attestation: {}", e);
-                            }
-                        }
-                        SidecarCommand::Shutdown => {
-                            info!("🛑 Shutdown requested");
-                            break;
-                        }
-                    }
-                }
+            _ = tokio::signal::ctrl_c() => {
+                info!("🛑 Shutdown signal received");
+                break;
             }
             
             // Heartbeat every 30 seconds
             _ = sleep(Duration::from_secs(30)) => {
-                debug!("💓 Sidecar heartbeat - stealth: {}", sidecar.stealth_enabled);
+                let status = sidecar.get_status().await;
+                debug!("💓 Privacy sidecar active - epoch: {}, peers: {}", 
+                    status["current_epoch"], status["peer_count"]);
             }
         }
     }
@@ -496,7 +349,7 @@ async fn run_sidecar(args: Args) -> Result<()> {
         sidecar.disable_stealth().await?;
     }
     
-    info!("👋 reth-stealth-sidecar shut down cleanly");
+    info!("👋 lighthouse-privacy-sidecar shut down cleanly");
     Ok(())
 }
 
@@ -506,9 +359,9 @@ async fn main() -> Result<()> {
     
     // Initialize tracing
     let filter = if args.verbose {
-        "reth_stealth_sidecar=debug,subnet_juggler=debug,friend_relay=debug,stealth_metrics=debug"
+        "lighthouse_privacy_sidecar=debug,subnet_juggler=debug,friend_relay=debug,stealth_metrics=debug"
     } else {
-        "reth_stealth_sidecar=info,subnet_juggler=info,friend_relay=info,stealth_metrics=info"
+        "lighthouse_privacy_sidecar=info,subnet_juggler=info,friend_relay=info,stealth_metrics=info"
     };
     
     tracing_subscriber::fmt()

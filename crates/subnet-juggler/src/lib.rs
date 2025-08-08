@@ -10,8 +10,8 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
-pub mod reth_provider;
-pub use reth_provider::{RethNetworkProvider, NetworkEvent, NetworkCommand};
+pub mod beacon_network;
+pub use beacon_network::{BeaconNetworkProvider, NetworkEvent, NetworkCommand};
 
 /// Commands that can be sent to the SubnetJuggler
 #[derive(Debug, Clone)]
