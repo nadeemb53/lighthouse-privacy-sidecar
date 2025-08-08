@@ -24,7 +24,7 @@ public_key = "0x1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff
 
 # Waku/nwaku configuration for RLN-protected mesh
 [waku_config]
-nwaku_rpc_url = "http://localhost:8545"
+nwaku_rpc_url = "http://localhost:8645"  # nwaku REST API endpoint
 rln_contract_address = "0x" # Auto-generated if not specified
 rate_limit_per_epoch = 100
 

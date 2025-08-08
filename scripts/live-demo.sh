@@ -25,7 +25,13 @@ cleanup() {
         kill -9 $SIDECAR_PID 2>/dev/null || true
     fi
     
+    # Extra safety: kill any remaining reth-stealth-sidecar processes
+    pkill -f "reth-stealth-sidecar" 2>/dev/null || true
+    
     rm -f "$COMMAND_PIPE"
+    
+    # Note: nwaku continues running independently
+    
     echo -e "${GREEN}✅ Cleanup completed${NC}"
     exit 0
 }
@@ -129,10 +135,23 @@ if [ ! -f "./target/release/reth-stealth-sidecar" ]; then
     cargo build --release --quiet
 fi
 
+# Check if nwaku is available for RLN integration
+echo -e "${CYAN}🔧 Checking nwaku availability for RLN-enabled friend relay...${NC}"
+NWAKU_AVAILABLE=false
+if curl -s http://localhost:8645/debug/v1/version >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ nwaku is running - RLN integration enabled${NC}"
+    NWAKU_AVAILABLE=true
+else
+    echo -e "${YELLOW}⚠️  nwaku not detected - demo will run with subnet shuffling only${NC}"
+    echo -e "${CYAN}💡 To enable full RLN integration, run: ./scripts/setup-nwaku.sh${NC}"
+    NWAKU_AVAILABLE=false
+fi
+
 # Setup
 rm -f "$COMMAND_PIPE"
 mkfifo "$COMMAND_PIPE"
 
+echo ""
 echo -e "${YELLOW}🚀 Starting Demo...${NC}"
 echo ""
 
@@ -186,8 +205,14 @@ echo ""
 # Show stealth features
 echo -e "${CYAN}🔍 Active Protection Features:${NC}"
 echo -e "   🔀 Dynamic Subnet Shuffling: ${GREEN}8 extra subnets/epoch${NC}"
-echo -e "   🤝 Friend Relay Mesh: ${GREEN}3 trusted nodes${NC}" 
-echo -e "   🛡️  RLN Rate Limiting: ${GREEN}100 msgs/epoch${NC}"
+if [ "$NWAKU_AVAILABLE" = true ]; then
+    echo -e "   🤝 Friend Relay Mesh: ${GREEN}3 trusted nodes (RLN enabled)${NC}" 
+    echo -e "   🛡️  RLN Rate Limiting: ${GREEN}100 msgs/epoch${NC}"
+    echo -e "   🌐 Waku Network: ${GREEN}http://localhost:8645${NC}"
+else
+    echo -e "   🤝 Friend Relay Mesh: ${YELLOW}Simulated (nwaku offline)${NC}"
+    echo -e "   🛡️  RLN Rate Limiting: ${YELLOW}Simulated${NC}"
+fi
 echo -e "   📊 Real-time Metrics: ${GREEN}http://localhost:9090/metrics${NC}"
 echo ""
 
@@ -280,7 +305,12 @@ echo ""
 
 echo -e "${YELLOW}💡 Technical Innovation:${NC}"
 echo -e "   🔀 ${WHITE}Dynamic Subnet Shuffling${NC} - Breaks backbone subnet detection"
-echo -e "   🤝 ${WHITE}Friend Relay Mesh${NC} - k-anonymity through Waku + RLN"
+if [ "$NWAKU_AVAILABLE" = true ]; then
+    echo -e "   🤝 ${WHITE}Friend Relay Mesh${NC} - k-anonymity through Waku + RLN proofs"
+    echo -e "   🛡️  ${WHITE}RLN Rate Limiting${NC} - Cryptographic spam prevention"
+else
+    echo -e "   🤝 ${WHITE}Friend Relay Mesh${NC} - k-anonymity through Waku + RLN (simulated)"
+fi
 echo -e "   🕐 ${WHITE}System Clock Provider${NC} - No consensus client dependency"
 echo -e "   📡 ${WHITE}Real libp2p Integration${NC} - Native Ethereum networking"
 echo ""
